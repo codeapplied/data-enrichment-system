@@ -1,0 +1,59 @@
+{
+  "sampleriversidedevelopments.example": {
+    "industry": "real estate development",
+    "company_size_signal": "51-200",
+    "raw_contacts": [
+      {
+        "name": "Alex Rivera",
+        "title": "Chief Executive Officer",
+        "department": "executive",
+        "seniority": "executive",
+        "email": "alex.rivera@sampleriversidedevelopments.example",
+        "verification_status": "verified"
+      },
+      {
+        "name": "Jamie Okoye",
+        "title": "VP of Development",
+        "department": "development",
+        "seniority": "vp",
+        "email": "jamie.okoye@sampleriversidedevelopments.example",
+        "verification_status": "verified"
+      },
+      {
+        "name": "Sam Patel",
+        "title": "Operations Manager",
+        "department": "operations",
+        "seniority": "manager",
+        "email": "sam.patel@sampleriversidedevelopments.example",
+        "verification_status": "verified"
+      }
+    ]
+  },
+  "maplegroveresidences.example": {
+    "industry": "real estate development",
+    "company_size_signal": "11-50",
+    "raw_contacts": [
+      {
+        "name": "Taylor Chen",
+        "title": "President",
+        "department": "executive",
+        "seniority": "executive",
+        "email": "taylor.chen@maplegroveresidences.example",
+        "verification_status": "verified"
+      },
+      {
+        "name": "Morgan Diaz",
+        "title": "Construction Director",
+        "department": "construction",
+        "seniority": "director",
+        "email": "morgan.diaz@maplegroveresidences.example",
+        "verification_status": "unverified"
+      }
+    ]
+  },
+  "sampleharborproperties.example": {
+    "industry": "real estate development",
+    "company_size_signal": "1-10",
+    "raw_contacts": []
+  }
+}
