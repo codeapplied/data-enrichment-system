@@ -1,5 +1,9 @@
 # Data Enrichment System
 
+[![Tests](https://github.com/codeapplied/data-enrichment-system/actions/workflows/tests.yml/badge.svg)](https://github.com/codeapplied/data-enrichment-system/actions/workflows/tests.yml)
+[![Python 3.11+](https://img.shields.io/badge/python-3.11%2B-blue.svg)](pyproject.toml)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
+
 A company-to-decision-maker contact enrichment pipeline — rebuilt as a generalized,
 open-source system.
 
@@ -8,115 +12,85 @@ generic, sanitized logic only. No employer-specific data, workflows, or branding
 
 ## Status
 
-🚧 Early development. The originally-scoped pipeline is fully built end to
-end: domain discovery, contact enrichment, and CRM push, all wired into
-the CLI/DB pipeline and unit-tested. See
+The originally-scoped pipeline is complete end to end: domain discovery
+(confidence-gated), contact enrichment (department-priority ranked), and
+CRM push (3-phase find-or-create), all wired into the CLI/DB pipeline, a
+CI-tested suite (46 tests — run `pytest`), and a real (not templated)
+Pipedrive client alongside network-free sandbox backends for every
+external integration point. See
 [open issues](https://github.com/codeapplied/data-enrichment-system/issues)
 for what's next (a real CSV/Excel import path, reconciliation checks, and
-wiring in real vendors in place of the sandbox backends).
+wiring in real search/enrichment vendors in place of their sandboxes).
 
-Try it end to end with zero setup beyond `uv venv && uv pip install -e .`:
+## Architecture
 
+```mermaid
+flowchart LR
+    A["Raw record"] --> B["Domain discovery"]
+    B --> C{"Confidence gate"}
+    C -->|"high"| D["Contact enrichment"]
+    C -->|"else"| E["needs_review<br/>(parked)"]
+    D --> F{"Contacts found?"}
+    F -->|"yes"| G["CRM push<br/>org -> contact -> lead"]
+    F -->|"no"| E
 ```
-dataenrich init
-dataenrich seed-demo
-dataenrich discover --apply  # resolves high-confidence orgs, parks the rest
-dataenrich enrich --apply    # ranks+stores contacts for domain-resolved orgs
-dataenrich push-crm --apply  # organization -> contact -> lead, find-or-create
-dataenrich status
-```
+
+Every stage logs a `SyncLog` row, which `dataenrich status` reads. Full
+breakdown, sequence diagram, module responsibilities, and the reasoning
+behind the key design decisions (the confidence gate, field-level
+authority, true dry-run safety, department-priority ranking, the
+overwrite-protection gate): [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md).
+
+## In action
+
+Real output from the actual CLI (sandbox data, default rules) — not
+mockups. Regenerate these with `python scripts/generate_readme_assets.py`
+after any CLI change.
+
+**`dataenrich discover --apply`** — resolves 2 of 5 sample organizations at
+high confidence, parks the other 3 (one low-confidence single-source match
+with an aggregator false-positive correctly excluded, one
+agreement-without-confirmation, one fully unresolved):
+
+![dataenrich discover --apply output](docs/assets/cli-discover.svg)
+
+**`dataenrich enrich --apply`** — ranks and stores contacts for both
+domain-resolved organizations:
+
+![dataenrich enrich --apply output](docs/assets/cli-enrich.svg)
+
+**`dataenrich push-crm`** (plan-only) — the first organization matches the
+sandbox's pre-seeded CRM record and reuses its ID; the second is a genuine
+`(new)`, and no CRM write happens either way in dry-run:
+
+![dataenrich push-crm output](docs/assets/cli-push-crm.svg)
+
+**`dataenrich status`** — every stage's `SyncLog` row:
+
+![dataenrich status output](docs/assets/cli-status.svg)
 
 ## Domain discovery
 
-`src/dataenrich/discovery/` — the confidence-gated engine that turns a raw
-company/project/address record into a resolved domain, or parks it for
-manual review:
-
-- `query.py` — builds two deliberately different query shapes per company
-  (not a naive repeat); numbered/shell-entity names (e.g. "1234567 Ontario
-  Inc.") get a project-name/address-first query instead of a name-first one,
-  since their own name is nearly useless for search.
-- `confidence.py` — the actual gate: two independent search signals
-  agreeing *and* a live domain confirmation is "high" (only this tier
-  proceeds automatically); agreement without confirmation is "medium";
-  a single confirmed signal is "low"; anything else is "unresolved" and
-  parked for manual review, never silently dropped or silently pushed
-  downstream.
-- `exclusion.py` — a living blocklist (aggregators, directories, news
-  sites, generic tokens) applied before a result ever becomes a vote.
-- `base.py` — the `SearchClient` interface and `discover_domain()`
-  orchestrator that ties the above together.
-- `sandbox_client.py` — the default demo backend: bundled fixture data,
-  zero network calls, zero API keys, proves the whole pipeline end-to-end.
-- `real_search_client_template.py` + `http_head_check.py` — template for
-  wiring in a real search vendor plus a working, real (not sandboxed) HTTP
-  HEAD confirmation check.
-
-Run `pytest` to see the confidence gate exercised against 5 scenarios
-(clean agreement, a shell-entity name, an aggregator false-positive
-correctly excluded, agreement-without-confirmation, and an all-excluded
-case) — fully offline, no network or API keys required.
+`src/dataenrich/discovery/` — confidence-gated: two independent search
+signals agreeing *and* a live domain confirmation is "high" (the only tier
+that proceeds automatically); numbered/shell-entity company names (e.g.
+"1234567 Ontario Inc.") get a project/address-first query instead of a
+name-first one. Ships with a network-free sandbox backend by default —
+see [ARCHITECTURE.md](docs/ARCHITECTURE.md) for the full module breakdown.
 
 ## Contact enrichment
 
-`src/dataenrich/enrichment/` — turns a resolved domain into ranked,
-stored contacts:
-
-- `base.py` — the `ContactEnrichmentClient` interface and `RawContact`/
-  `EnrichmentResult` types.
-- `ranking.py` — re-sorts contacts by department relevance instead of
-  the vendor's default seniority-first order. A department not in the
-  configured priority list sorts last; ties keep the vendor's original
-  order (stable sort).
-- `sandbox_client.py` — the default demo backend: bundled fixture data,
-  including one domain with zero contacts on purpose (a "thin" result —
-  a correct domain the vendor just has nothing indexed for, a different
-  failure mode from a wrong domain).
-- `real_client_template.py` — template for wiring in a real vendor
-  (e.g. a Hunter.io-style domain-based contact API).
+`src/dataenrich/enrichment/` — turns a resolved domain into ranked, stored
+contacts, re-sorted by department relevance instead of the vendor's
+default seniority-first order (a real, measured fix in the reference
+system this project is modeled on).
 
 ## CRM push
 
 `src/dataenrich/crm/` — three ordered find-or-create phases (organization
-→ contact → lead), so re-running is always safe and nothing gets
-duplicated:
-
-- `base.py` — the `CRMClient` interface. Organizations dedup on
-  normalized website (not name — names vary too much in formatting);
-  contacts dedup on email; leads dedup on (organization, title).
-- `overwrite_gate.py` — the shared "diff against the live value, only
-  auto-approve the safe cases" gate every write funnels through, rather
-  than each call site trusting its own judgment: empty-in-CRM or
-  identical values auto-write, a real conflict is reported and skipped,
-  never silently overwritten.
-- `sandbox_client.py` — the default demo backend: an in-memory fake CRM,
-  pre-seeded with one "existing" organization so dedup against
-  *pre-existing* CRM data is actually exercised, not just dedup within a
-  single run.
-- `pipedrive_client.py` — a real, working Pipedrive REST API v1 client
-  (not just a template — the same pattern already proven in the sibling
-  [tender-tracking-system](https://github.com/codeapplied/tender-tracking-system)
-  repo). Honest limitation: Pipedrive has no built-in "website" field on
-  organizations, so org lookup falls back to name-based search; contact
-  lookup by email has no such limitation. No live Pipedrive account was
-  available to test against in this session — verified via mocked-HTTP-
-  shape tests only.
-
-A lead is modeled per *project*, not per company — a single developer can
-have multiple concurrently active projects, each needing independent
-outreach tracking. Dry-run is genuinely safe here too: no `create_*`
-method is ever called on the CRM client in plan-only mode, not even
-against the sandbox's in-memory fake.
-
-## Architecture
-
-Raw records (company name, project name, address) → domain discovery (confidence-gated,
-cross-checked across independent signals) → only high-confidence domains proceed
-automatically, everything else is parked for manual review → contact enrichment against
-a domain-based third-party API → contacts re-ranked by department relevance instead of
-the vendor's default seniority-first sort → push to CRM (organization → contact → lead,
-each phase gated on the previous phase's log). Every stage is logged to `SyncLog`, which
-the ops CLI reads for pipeline health.
+→ contact → lead), each deduplicated (website / email / (org, title)) so
+re-running is always safe. A lead is modeled per *project*, not per
+company. Includes a real, working Pipedrive client, not just a template.
 
 ## Setup
 
@@ -128,6 +102,16 @@ cp config/rules.example.yaml config/rules.yaml
 dataenrich init
 ```
 
+Try it end to end with just the sandbox backends, no credentials needed:
+
+```
+dataenrich seed-demo
+dataenrich discover --apply
+dataenrich enrich --apply
+dataenrich push-crm --apply
+dataenrich status
+```
+
 ## CLI
 
 - `dataenrich init` — create the database
@@ -135,8 +119,28 @@ dataenrich init
 - `dataenrich rules` — show the loaded department-priority and domain-exclusion rules
 - `dataenrich seed-demo` — load the bundled sandbox fixture as pending organizations (demo/test data only — there's no CSV/Excel import for your own data yet)
 - `dataenrich discover [--apply]` — run domain discovery for pending organizations. Plan-only by default. Only "high" confidence proceeds automatically (status → `domain_resolved`); everything else is parked (`needs_review`) — field-level authority means a later run never touches a non-`pending` organization again, so a human's manual correction always sticks
-- `dataenrich enrich [--apply]` — run contact enrichment for domain-resolved organizations. Plan-only by default. Contacts are ranked by department priority and stored (top 5); a domain that resolves but returns zero contacts is parked back to `needs_review` rather than marked "enriched" with nothing in it — field-level authority applies here too (only `domain_resolved` rows are ever touched)
-- `dataenrich push-crm [--apply]` — push enriched organizations to the CRM: organization → contact → lead, each a find-or-create. Plan-only by default (no CRM writes at all, not even to the sandbox's in-memory fake). Field-level authority again — only `enriched` rows are ever touched
+- `dataenrich enrich [--apply]` — run contact enrichment for domain-resolved organizations. Plan-only by default. Contacts are ranked by department priority and stored (top 5); a domain that resolves but returns zero contacts is parked back to `needs_review` rather than marked "enriched" with nothing in it
+- `dataenrich push-crm [--apply]` — push enriched organizations to the CRM: organization → contact → lead, each a find-or-create. Plan-only by default — no CRM writes at all, not even to the sandbox's in-memory fake
+
+## Testing
+
+```
+uv pip install -e ".[dev]"
+pytest
+```
+
+46 tests covering: the confidence gate against all 4 tiers, query
+construction (including the numbered-entity anchor selection), exclusion
+filtering, department-priority ranking, the overwrite-protection gate, a
+real (mocked-HTTP) Pipedrive client, and every pipeline stage end-to-end
+against a real temp SQLite DB — including field-level authority (a second
+run never reprocesses an already-advanced row) and true dry-run safety
+(no `create_*` call ever reaches a client, sandbox or real, in plan-only
+mode).
+
+## Adding a real vendor
+
+See [docs/ADDING_A_VENDOR.md](docs/ADDING_A_VENDOR.md).
 
 ## License
 
