@@ -16,6 +16,11 @@ department_priority:
 # and generic tokens that repeatedly produce false-positive domain matches
 # (listing aggregators, directories, news sites, government portals,
 # overly generic single-word tokens). Expected to grow from real false
-# positives observed during use — not meant to be exhaustive on day one.
+# positives observed during use — the categories below are illustrative
+# starting points, not an exhaustive or vetted list.
 exclude_domains: []
-exclude_domain_keywords: []
+exclude_domain_keywords:
+  - aggregator
+  - directory
+  - newsoutlet
+  - listings

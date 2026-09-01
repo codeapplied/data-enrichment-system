@@ -9,8 +9,42 @@ generic, sanitized logic only. No employer-specific data, workflows, or branding
 ## Status
 
 🚧 Early development. DB models, config loading, and CLI skeleton are in place.
-Domain discovery, contact enrichment, and CRM sync are not built yet — see
+The domain-discovery engine (confidence gate, query construction, exclusion
+filtering, a network-free sandbox demo backend) is built and unit-tested.
+Not yet wired into the CLI/DB pipeline, contact enrichment, and CRM sync are
+not built yet — see
 [open issues](https://github.com/codeapplied/data-enrichment-system/issues).
+
+## Domain discovery
+
+`src/dataenrich/discovery/` — the confidence-gated engine that turns a raw
+company/project/address record into a resolved domain, or parks it for
+manual review:
+
+- `query.py` — builds two deliberately different query shapes per company
+  (not a naive repeat); numbered/shell-entity names (e.g. "1234567 Ontario
+  Inc.") get a project-name/address-first query instead of a name-first one,
+  since their own name is nearly useless for search.
+- `confidence.py` — the actual gate: two independent search signals
+  agreeing *and* a live domain confirmation is "high" (only this tier
+  proceeds automatically); agreement without confirmation is "medium";
+  a single confirmed signal is "low"; anything else is "unresolved" and
+  parked for manual review, never silently dropped or silently pushed
+  downstream.
+- `exclusion.py` — a living blocklist (aggregators, directories, news
+  sites, generic tokens) applied before a result ever becomes a vote.
+- `base.py` — the `SearchClient` interface and `discover_domain()`
+  orchestrator that ties the above together.
+- `sandbox_client.py` — the default demo backend: bundled fixture data,
+  zero network calls, zero API keys, proves the whole pipeline end-to-end.
+- `real_search_client_template.py` + `http_head_check.py` — template for
+  wiring in a real search vendor plus a working, real (not sandboxed) HTTP
+  HEAD confirmation check.
+
+Run `pytest` to see the confidence gate exercised against 5 scenarios
+(clean agreement, a shell-entity name, an aggregator false-positive
+correctly excluded, agreement-without-confirmation, and an all-excluded
+case) — fully offline, no network or API keys required.
 
 ## Architecture
 
