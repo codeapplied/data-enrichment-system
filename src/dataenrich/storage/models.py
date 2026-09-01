@@ -59,6 +59,26 @@ class Contact(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
 
 
+class Lead(Base):
+    """One lead per PROJECT, not per developer/company — a single developer
+    can have multiple concurrently active projects, each needing
+    independent outreach tracking (an earlier design that modeled this at
+    the company level measurably lost that granularity, per design notes).
+    Since an `Organization` row here already represents one raw
+    project/prospect record, one Lead per Organization row IS one lead per
+    project — no separate project table needed."""
+
+    __tablename__ = "leads"
+    __table_args__ = (UniqueConstraint("organization_id", name="uq_lead_organization"),)
+
+    id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
+    organization_id: Mapped[int] = mapped_column(index=True)
+    primary_contact_id: Mapped[int | None] = mapped_column(nullable=True)
+    title: Mapped[str] = mapped_column(Text)
+    crm_lead_id: Mapped[str | None] = mapped_column(String(50), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
+
+
 class SyncLog(Base):
     """One row per pipeline stage run — what the ops CLI reads for health."""
 
