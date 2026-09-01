@@ -181,5 +181,46 @@ def enrich(
         console.print(f"[red]  {escape(msg)}[/red]")
 
 
+@app.command(name="push-crm")
+def push_crm(
+    apply: bool = typer.Option(
+        False, "--apply", help="Actually write changes. Default is plan-only (dry-run) — no CRM/DB writes."
+    ),
+) -> None:
+    """Push enriched organizations to the CRM: organization -> contact ->
+    lead, each a find-or-create. Sandbox backend only for now (see
+    crm/pipedrive_client.py to wire in real Pipedrive credentials). Plan-only
+    by default — no create calls reach the CRM client at all in dry-run,
+    not just the local DB."""
+    from .pipeline.push_crm import run_crm_push
+
+    engine = get_engine(settings.db_path)
+    session_factory = get_session_factory(engine)
+    with session_factory() as session:
+        result = run_crm_push(session, apply=apply)
+
+    if result.processed == 0:
+        console.print("[yellow]No enriched organizations. Run 'dataenrich enrich --apply' first.[/yellow]")
+        raise typer.Exit()
+
+    mode = (
+        "[bold green]APPLIED[/bold green]"
+        if apply
+        else "[bold yellow]PLAN ONLY (dry-run) — pass --apply to write for real[/bold yellow]"
+    )
+    console.print(mode)
+
+    table = Table(title="CRM Push Results")
+    for column in ("Company", "CRM Org ID", "CRM Lead ID"):
+        table.add_column(column)
+    for company, crm_org_id, crm_lead_id in result.previews:
+        table.add_row(escape(company), escape(crm_org_id), escape(crm_lead_id))
+    console.print(table)
+
+    console.print(f"Processed: {result.processed}  Pushed: {result.pushed}  Errors: {len(result.errors)}")
+    for msg in result.errors[:5]:
+        console.print(f"[red]  {escape(msg)}[/red]")
+
+
 if __name__ == "__main__":
     app()
