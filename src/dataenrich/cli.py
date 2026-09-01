@@ -135,5 +135,51 @@ def discover(
         console.print(f"[red]  {escape(msg)}[/red]")
 
 
+@app.command()
+def enrich(
+    apply: bool = typer.Option(
+        False, "--apply", help="Actually write changes. Default is plan-only (dry-run) — no DB writes."
+    ),
+) -> None:
+    """Run contact enrichment for domain-resolved organizations. Sandbox
+    backend only for now (see enrichment/real_client_template.py to wire in
+    a real vendor). Plan-only by default."""
+    from .pipeline.enrich import run_enrichment
+
+    engine = get_engine(settings.db_path)
+    session_factory = get_session_factory(engine)
+    with session_factory() as session:
+        result = run_enrichment(session, apply=apply)
+
+    if result.processed == 0:
+        console.print(
+            "[yellow]No domain-resolved organizations. Run 'dataenrich discover --apply' first.[/yellow]"
+        )
+        raise typer.Exit()
+
+    mode = (
+        "[bold green]APPLIED[/bold green]"
+        if apply
+        else "[bold yellow]PLAN ONLY (dry-run) — pass --apply to write for real[/bold yellow]"
+    )
+    console.print(mode)
+
+    table = Table(title="Contact Enrichment Results")
+    for column in ("Company", "Raw contacts found", "Selected"):
+        table.add_column(column)
+    for company, raw_count, selected_count in result.previews:
+        style = "[yellow]" if raw_count == 0 else ""
+        end_style = "[/yellow]" if raw_count == 0 else ""
+        table.add_row(escape(company), f"{style}{raw_count}{end_style}", str(selected_count))
+    console.print(table)
+
+    console.print(
+        f"Processed: {result.processed}  Enriched: {result.enriched}  "
+        f"Thin (zero contacts found): {result.thin}  Errors: {len(result.errors)}"
+    )
+    for msg in result.errors[:5]:
+        console.print(f"[red]  {escape(msg)}[/red]")
+
+
 if __name__ == "__main__":
     app()
