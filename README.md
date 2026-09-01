@@ -10,10 +10,21 @@ generic, sanitized logic only. No employer-specific data, workflows, or branding
 
 🚧 Early development. DB models, config loading, and CLI skeleton are in place.
 The domain-discovery engine (confidence gate, query construction, exclusion
-filtering, a network-free sandbox demo backend) is built and unit-tested.
-Not yet wired into the CLI/DB pipeline, contact enrichment, and CRM sync are
-not built yet — see
+filtering, a network-free sandbox demo backend) is built, wired into the
+CLI/DB pipeline, and unit-tested. Contact enrichment and CRM sync are not
+built yet — see
 [open issues](https://github.com/codeapplied/data-enrichment-system/issues).
+
+Try it end to end with zero setup beyond `uv venv && uv pip install -e .`:
+
+```
+dataenrich init
+dataenrich seed-demo
+dataenrich discover          # dry-run — shows what would happen
+dataenrich discover --apply  # writes: resolves high-confidence orgs,
+                              # parks everything else for manual review
+dataenrich status
+```
 
 ## Domain discovery
 
@@ -71,7 +82,8 @@ dataenrich init
 - `dataenrich init` — create the database
 - `dataenrich status` — recent pipeline runs
 - `dataenrich rules` — show the loaded department-priority and domain-exclusion rules
-- `dataenrich discover` — run domain discovery (not yet implemented)
+- `dataenrich seed-demo` — load the bundled sandbox fixture as pending organizations (demo/test data only — there's no CSV/Excel import for your own data yet)
+- `dataenrich discover [--apply]` — run domain discovery for pending organizations. Plan-only by default. Only "high" confidence proceeds automatically (status → `domain_resolved`); everything else is parked (`needs_review`) — field-level authority means a later run never touches a non-`pending` organization again, so a human's manual correction always sticks
 
 ## License
 
